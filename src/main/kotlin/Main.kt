@@ -43,65 +43,59 @@ fun main() {
 }
 
 */
-
 import gurux.common.*
 import gurux.io.BaudRate
 import gurux.io.Parity
 import gurux.io.StopBits
 import gurux.serial.GXSerial
-import java.io.BufferedReader
-import java.io.InputStreamReader
-
+import java.nio.charset.StandardCharsets
 
 fun main() {
-    val portName = "COM1" // Cambiar al puerto correcto en tu sistema
-    val baudRate = 4800 // Cambiar a la velocidad correcta del puerto serie
+    val portName = "COM4" // Asegúrate de cambiar esto al puerto correcto en tu sistema
+    val baudRate = BaudRate.BAUD_RATE_115200 // Ajusta esto a la velocidad correcta de tu puerto serie
 
-    val gl = GXSerial()
+    val gl = GXSerial().apply {
+        this.portName = portName
+        this.baudRate = baudRate
+        this.parity = Parity.NONE
+        this.stopBits = StopBits.ONE
+        this.dataBits = 8
+    }
 
-    gl.baudRate = BaudRate.BAUD_RATE_115200
-    gl.parity = Parity.NONE
-    gl.portName = "COM4"
-    gl.stopBits = StopBits.ONE
-    gl.dataBits = 8
+    val listener = object : IGXMediaListener {
+        override fun onError(sender: Any?, e: Exception?) {
+            println("Error: ${e?.message}")
+        }
 
-    val listener = GXSerialListener
+        override fun onReceived(sender: Any, e: ReceiveEventArgs) {
+            val data = String(e.data as ByteArray, StandardCharsets.UTF_8)
+            println("Datos recibidos: $data")
+        }
 
-    gl.addListener(listener);
+        override fun onMediaStateChange(sender: Any?, e: MediaStateEventArgs?) {
+            println("Estado del medio cambiado: ${e?.state}")
+        }
 
-    //val port = GXSerialPort(portName, baudRate)
-    gl.open()
+        override fun onTrace(sender: Any?, e: TraceEventArgs?) {
+            println("Trace: ${e?.data}")
+        }
+
+        override fun onPropertyChanged(sender: Any?, e: PropertyChangedEventArgs?) {
+            println("Propiedad cambiada: ${e?.propertyName}")
+        }
+    }
 
     gl.addListener(listener)
 
-
-}
-
-object GXSerialListener : IGXMediaListener {
-    override fun onError(p0: Any?, p1: java.lang.Exception?) {
-        TODO("Not yet implemented")
+    try {
+        gl.open()
+        println("Puerto abierto. Escuchando datos...")
+        // La ejecución se detiene aquí para una aplicación de consola. En una aplicación real, necesitas una forma de mantener la aplicación ejecutándose.
+        Thread.sleep(10000) // Esperar 10 segundos para demostración
+    } catch (e: Exception) {
+        e.printStackTrace()
+    } finally {
+        gl.close()
+        println("Puerto cerrado.")
     }
-
-    /**
-     * Media component sends received data through this method.
-     *
-     * @param sender The source of the event.
-     * @param e Event arguments.
-     */
-    override fun onReceived(sender: Any, e: ReceiveEventArgs) {
-        //Handle received asyncronous data here.
-    }
-
-    override fun onMediaStateChange(p0: Any?, p1: MediaStateEventArgs?) {
-        TODO("Not yet implemented")
-    }
-
-    override fun onTrace(p0: Any?, p1: TraceEventArgs?) {
-        TODO("Not yet implemented")
-    }
-
-    override fun onPropertyChanged(p0: Any?, p1: PropertyChangedEventArgs?) {
-        TODO("Not yet implemented")
-    }
-
 }
