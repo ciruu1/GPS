@@ -111,7 +111,7 @@ fun main() {
         gl.open()
         println("Puerto abierto. Escuchando datos...")
         // La ejecución se detiene aquí para una aplicación de consola. En una aplicación real, necesitas una forma de mantener la aplicación ejecutándose.
-        Thread.sleep(10000) // Esperar 10 segundos para demostración
+        Thread.sleep(1000000) // Esperar 10 segundos para demostración
     } catch (e: Exception) {
         e.printStackTrace()
     } finally {
