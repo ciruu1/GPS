@@ -1,10 +1,79 @@
-import gurux.common.*
-import gurux.io.BaudRate
-import gurux.io.Parity
-import gurux.io.StopBits
-import gurux.serial.GXSerial
-import java.nio.charset.StandardCharsets
+
+import com.fazecast.jSerialComm.SerialPort
+import com.fazecast.jSerialComm.SerialPortDataListener
+import com.fazecast.jSerialComm.SerialPortEvent
+import javafx.application.Application
+import javafx.application.Platform
+import javafx.scene.Scene
+import javafx.scene.canvas.Canvas
+import javafx.scene.canvas.GraphicsContext
+import javafx.scene.image.Image
+import javafx.scene.layout.StackPane
+import javafx.stage.Stage
+import java.io.FileInputStream
 import kotlin.math.*
+
+
+val imageWidthPixels = 1280 // Ancho de la imagen en píxeles
+val imageHeightPixels = 720 // Alto de la imagen en píxeles
+val groundCoverageWidthMeters = 1140.0 // Cobertura en el suelo en metros (debes ajustar este valor)
+val groundCoverageHeightMeters = 637.0
+
+class MapViewer : Application() {
+
+    private lateinit var graphicsContext: GraphicsContext
+    companion object {
+        private var instance: MapViewer? = null
+
+        fun getInstance(): MapViewer? {
+            return instance
+        }
+    }
+    override fun start(primaryStage: Stage) {
+        instance = this
+        val root = StackPane()
+        val canvas = Canvas(1280.0, 720.0) // Tamaño del canvas para la imagen del mapa
+        root.children.add(canvas)
+        graphicsContext = canvas.graphicsContext2D
+
+        // Carga y muestra la imagen de mapa
+        val mapImage = Image(FileInputStream("/Users/ivangarcia/Documents/casa4.jpg"))
+        graphicsContext.drawImage(mapImage, 0.0, 0.0)
+
+        primaryStage.scene = Scene(root)
+        primaryStage.title = "Map Viewer"
+        primaryStage.show()
+
+        // Añade un marcador en el centro de la imagen
+        val centerPixelX = canvas.width / 2
+        val centerPixelY = canvas.height / 2
+    }
+
+    // Función para convertir latitud/longitud a píxeles y dibujar un marcador
+    fun addMarker(pixelX: Double, pixelY: Double) {
+        Platform.runLater {
+            graphicsContext.apply {
+                fill = javafx.scene.paint.Color.RED // Establece el color del relleno a rojo
+                fillOval(pixelX - 5, pixelY - 5, 10.0, 10.0) // Dibuja un marcador
+            }
+        }
+    }
+}
+
+// Función de conversión de latitud/longitud a píxeles (este código debe ser ajustado con tu lógica y escala)
+fun latLonToPixel(lat: Double, lon: Double, centerLat: Double, centerLon: Double): Pair<Int, Int> {
+    val metersPerLatDegree = 111320.0 // Más preciso para la latitud promedio del mundo
+    val metersPerLonDegree = metersPerLatDegree * cos(Math.toRadians(centerLat)) // Ajustado por coseno de la latitud central
+
+    val deltaLatMeters = (lat - centerLat) * metersPerLatDegree
+    val deltaLonMeters = (lon - centerLon) * metersPerLonDegree
+
+    val pixelX = (deltaLonMeters * imageWidthPixels / groundCoverageWidthMeters) + imageWidthPixels / 2
+    val pixelY = imageHeightPixels / 2 - (deltaLatMeters * imageHeightPixels / groundCoverageHeightMeters) // Invertido Y para corregir el origen de coordenadas
+
+    return Pair(pixelX.toInt(), pixelY.toInt())
+}
+
 
 private fun convertToUTM(latitude: Double, longitude: Double, north: Boolean, west: Boolean): Array<Any> {
     val k0 = 0.9996
@@ -45,6 +114,12 @@ fun calculateM(a: Double, eSquared: Double, phi: Double): Double {
     return a * (term1 * phi - term2 * sin(2 * phi) + term3 * sin(4 * phi) - term4 * sin(6 * phi))
 }
 
+fun convertToDecimal(degreesMinutes: Double): Double {
+    val degrees = (degreesMinutes / 100).toInt()
+    val minutes = degreesMinutes % 100
+    return degrees + (minutes / 60)
+}
+
 fun convert_num_fixed(num: Double): Double {
     var num = num
     val grados = num.toInt() / 100
@@ -54,68 +129,56 @@ fun convert_num_fixed(num: Double): Double {
 }
 
 fun main() {
-    val portName = "COM4" // Asegúrate de cambiar esto al puerto correcto en tu sistema
-    val baudRate = BaudRate.BAUD_RATE_115200 // Ajusta esto a la velocidad correcta de tu puerto serie
+    val portName = "/dev/tty.usbmodem1101" // Asegúrate de cambiar esto al puerto correcto en tu sistema
+    val baudRate = 115200 // Ajusta esto a la velocidad correcta de tu puerto serie
 
-    val gl = GXSerial().apply {
-        this.portName = portName
-        this.baudRate = baudRate
-        this.parity = Parity.NONE
-        this.stopBits = StopBits.ONE
-        this.dataBits = 8
+    val comPort = SerialPort.getCommPort(portName)
+    comPort.baudRate = baudRate
+    comPort.parity = SerialPort.NO_PARITY
+    comPort.numStopBits = SerialPort.ONE_STOP_BIT
+    comPort.numDataBits = 8
+
+    if (comPort.openPort()) {
+        println("Puerto abierto exitosamente.")
+    } else {
+        println("No se pudo abrir el puerto.")
+        return
     }
 
-    val listener = object : IGXMediaListener {
-        override fun onError(sender: Any?, e: Exception?) {
-            println("Error: ${e?.message}")
-        }
+    comPort.addDataListener(object : SerialPortDataListener {
+        override fun getListeningEvents(): Int = SerialPort.LISTENING_EVENT_DATA_AVAILABLE
 
-        override fun onReceived(sender: Any, e: ReceiveEventArgs) {
-            val data = String(e.data as ByteArray, StandardCharsets.UTF_8)
-            //println("Datos recibidos: $data")
-            if (data.startsWith("\$GPGGA")) {
-                val parts = data.split(",")
+        override fun serialEvent(event: SerialPortEvent?) {
+            if (event?.eventType != SerialPort.LISTENING_EVENT_DATA_AVAILABLE) return
+            val newData = ByteArray(comPort.bytesAvailable())
+            val numRead = comPort.readBytes(newData, newData.size.toLong())
+            val dataString = String(newData, 0, numRead)
+            println("Datos recibidos: $dataString")
+            // Implementa aquí tu lógica específica para manejar los datos recibidos
+            if (dataString.startsWith("\$GPGGA")) {
+                val parts = dataString.split(",")
                 // Parsear los datos de la sentencia GGA
-                println(data)
-                val time = parts[1]
-                val latitude = parts[2]
-                var north = false
-                if (parts[3] == "N")
-                    north = true
-                var west = false
-                if (parts[5] == "W")
-                    west = true
-                val longitude = parts[4]
-                val altitude = parts[9]
-                val arr = convertToUTM(latitude.toDouble(), longitude.toDouble(), north, west)
+                println(dataString)
+                val latitude = parts[2].toDouble()
+                val longitude = parts[4].toDouble()
+                val north = parts[3] == "N"
+                val west = parts[5] == "W"
+                val arr = convertToUTM(latitude, longitude, north, west)
                 println("UTM Coordinates: EASTING=${arr[0]}, NORTHING=${arr[1]}, Zone=${arr[2]}")
+                val decimalLat = convertToDecimal(latitude)
+                val decimalLon = -convertToDecimal(longitude) // Negativo porque es Oeste
+                println(latLonToPixel(decimalLat, decimalLon,  40.549455555555554, -3.62285))
+                val (lat2, lon2) = latLonToPixel(decimalLat, decimalLon,  40.549455555555554, -3.62285)
+                println("Decimal Latitude: $decimalLat")
+                println("Decimal Longitude: $decimalLon")
+                Platform.runLater {
+                    MapViewer.getInstance()?.addMarker(lat2.toDouble(), lon2.toDouble())
+                }
             }
         }
+    })
 
-        override fun onMediaStateChange(sender: Any?, e: MediaStateEventArgs?) {
-            println("Estado del medio cambiado: ${e?.state}")
-        }
+    // Lanzar la interfaz gráfica de usuario de JavaFX
+    Application.launch(MapViewer::class.java)
 
-        override fun onTrace(sender: Any?, e: TraceEventArgs?) {
-            println("Trace: ${e?.data}")
-        }
-
-        override fun onPropertyChanged(sender: Any?, e: PropertyChangedEventArgs?) {
-            println("Propiedad cambiada: ${e?.propertyName}")
-        }
-    }
-
-    gl.addListener(listener)
-
-    try {
-        gl.open()
-        println("Puerto abierto. Escuchando datos...")
-        // La ejecución se detiene aquí para una aplicación de consola. En una aplicación real, necesitas una forma de mantener la aplicación ejecutándose.
-        Thread.sleep(1000000) // Esperar 10 segundos para demostración
-    } catch (e: Exception) {
-        e.printStackTrace()
-    } finally {
-        gl.close()
-        println("Puerto cerrado.")
-    }
 }
