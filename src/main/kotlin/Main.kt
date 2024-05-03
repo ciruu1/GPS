@@ -282,6 +282,14 @@ fun main() {
                 println(dataString)
                 val latitude = parts[2].toDouble()
                 val longitude = parts[4].toDouble()
+
+                // Calcular punto más cercano LAT LON
+                val pointCoordinatesList: ArrayList<LatLonPoint> = ArrayList()
+                coordsList.forEach { pointCoordinatesList.add(LatLonPoint(UtmCoordinate(30, 'S', it.easting, it.northing).utmToPointCoordinates(), it.speedLimit)) }
+                val closestpoint = calculateClosestPoint(latitude, longitude, pointCoordinatesList)
+                println("Latitude: ${closestpoint.point.latitude} | Longitude: ${closestpoint.point.longitude} | SpeedLimit: ${closestpoint.speed}")
+
+
                 val north = parts[3] == "N"
                 val west = parts[5] == "W"
                 val arr = convertToUTM(latitude, longitude, north, west)
@@ -298,13 +306,9 @@ fun main() {
                 val closestCoord = findClosestUTMCoord(targetCoord, coordsList)
                 val speed = updatePositionAndCalculateSpeed(decimalLat, decimalLon, timeDifference)
                 println("Velocidad actual: $speed km/h")
-                val speedStatus = getSpeedStatus(speed, closestCoord.speedLimit)
 
-                // Calcular punto más cercano LAT LON
-                val pointCoordinatesList: ArrayList<LatLonPoint> = ArrayList()
-                coordsList.forEach { pointCoordinatesList.add(LatLonPoint(UtmCoordinate(30, 'S', it.easting, it.northing).utmToPointCoordinates(), it.speedLimit)) }
-                val closestpoint = calculateClosestPoint(latitude, longitude, pointCoordinatesList)
-                println("Latitude: ${closestpoint.point.latitude} | Longitude: ${closestpoint.point.longitude} | SpeedLimit: ${closestpoint.speed}")
+                //val speedStatus = getSpeedStatus(speed, closestCoord.speedLimit)
+                val speedStatus = getSpeedStatus(speed, closestpoint.speed)
 
                 println("La coordenada UTM más cercana es: Northing: ${closestCoord.northing}, Easting: ${closestCoord.easting}, Speed Limit: ${closestCoord.speedLimit}")
                 println("Estado de la velocidad: $speedStatus")
