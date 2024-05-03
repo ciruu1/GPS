@@ -19,7 +19,7 @@ import java.io.File
 import java.io.FileInputStream
 import kotlin.math.*
 
-val FILE_PATH = "/Users/ivangarcia/Documents/GitHub/GPS/coords.txt"
+val FILE_PATH = "coords.txt"
 
 val imageWidthPixels = 1280 // Ancho de la imagen en píxeles
 val imageHeightPixels = 720 // Alto de la imagen en píxeles
@@ -221,9 +221,12 @@ fun calculateClosestPoint(latitude: Double, longitude: Double, list: ArrayList<L
     var currDist: Double
     for (point in list) {
         currDist = sqrt((point.point.latitude - latitude).pow(2) + (point.point.longitude - longitude).pow(2))
-        if (currDist < distance)
+
+        if (currDist < distance) {
             distance = currDist
-        finalPoint = point
+            finalPoint = point
+        }
+        //println("$currDist | $distance | ${finalPoint.point}")
     }
     return finalPoint
 }
