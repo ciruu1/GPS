@@ -215,12 +215,12 @@ fun getSpeedStatus(currentSpeed: Double, speedLimit: Double): String {
     }
 }
 
-fun calculateClosestPoint(latitude: Double, longitude: Double, list: ArrayList<PointCoordinates>): PointCoordinates {
-    var finalPoint = PointCoordinates(0.0, 0.0)
+fun calculateClosestPoint(latitude: Double, longitude: Double, list: ArrayList<LatLonPoint>): LatLonPoint {
+    var finalPoint = LatLonPoint(PointCoordinates(0.0, 0.0), 0.0)
     var distance = 10000000.0
     var currDist: Double
     for (point in list) {
-        currDist = sqrt((point.latitude - latitude).pow(2) + (point.longitude - longitude).pow(2))
+        currDist = sqrt((point.point.latitude - latitude).pow(2) + (point.point.longitude - longitude).pow(2))
         if (currDist < distance)
             distance = currDist
         finalPoint = point
@@ -298,10 +298,10 @@ fun main() {
                 val speedStatus = getSpeedStatus(speed, closestCoord.speedLimit)
 
                 // Calcular punto más cercano LAT LON
-                val pointCoordinatesList: ArrayList<PointCoordinates> = ArrayList()
-                coordsList.forEach { pointCoordinatesList.add(UtmCoordinate(30, 'S', it.easting, it.northing).utmToPointCoordinates()) }
+                val pointCoordinatesList: ArrayList<LatLonPoint> = ArrayList()
+                coordsList.forEach { pointCoordinatesList.add(LatLonPoint(UtmCoordinate(30, 'S', it.easting, it.northing).utmToPointCoordinates(), it.speedLimit)) }
                 val closestpoint = calculateClosestPoint(latitude, longitude, pointCoordinatesList)
-                println("Latitude: ${closestpoint.latitude} | Longitude: ${closestpoint.longitude}")
+                println("Latitude: ${closestpoint.point.latitude} | Longitude: ${closestpoint.point.longitude} | SpeedLimit: ${closestpoint.speed}")
 
                 println("La coordenada UTM más cercana es: Northing: ${closestCoord.northing}, Easting: ${closestCoord.easting}, Speed Limit: ${closestCoord.speedLimit}")
                 println("Estado de la velocidad: $speedStatus")
@@ -316,4 +316,9 @@ fun main() {
     // Lanzar la interfaz gráfica de usuario de JavaFX
     Application.launch(MapViewer::class.java)
 
+}
+
+class LatLonPoint(point: PointCoordinates, speed: Double) {
+    var point = point
+    var speed = speed
 }
