@@ -7,21 +7,34 @@ import javafx.application.Platform
 import javafx.scene.Scene
 import javafx.scene.canvas.Canvas
 import javafx.scene.canvas.GraphicsContext
+import javafx.scene.control.Label
+import javafx.scene.control.Tab
+import javafx.scene.control.TabPane
 import javafx.scene.image.Image
 import javafx.scene.layout.StackPane
+import javafx.scene.paint.Color
+import javafx.scene.text.Font
 import javafx.stage.Stage
+import java.io.File
 import java.io.FileInputStream
 import kotlin.math.*
 
 
 val imageWidthPixels = 1280 // Ancho de la imagen en píxeles
 val imageHeightPixels = 720 // Alto de la imagen en píxeles
-val groundCoverageWidthMeters = 1140.0 // Cobertura en el suelo en metros (debes ajustar este valor)
-val groundCoverageHeightMeters = 637.0
+val groundCoverageWidthMeters = 442.0 // Cobertura en el suelo en metros (debes ajustar este valor)
+val groundCoverageHeightMeters = 244.0
 
+var lastLat: Double? = null
+var lastLon: Double? = null
+var lastTime: Long? = null  // Tiempo en milisegundos
+data class UTMCoord(val northing: Double, val easting: Double, val speedLimit: Double)
 class MapViewer : Application() {
-
     private lateinit var graphicsContext: GraphicsContext
+    private lateinit var speedLabel: Label
+    private lateinit var speedPane: StackPane
+
+    // Singleton instance
     companion object {
         private var instance: MapViewer? = null
 
@@ -29,33 +42,57 @@ class MapViewer : Application() {
             return instance
         }
     }
+
     override fun start(primaryStage: Stage) {
         instance = this
-        val root = StackPane()
-        val canvas = Canvas(1280.0, 720.0) // Tamaño del canvas para la imagen del mapa
-        root.children.add(canvas)
-        graphicsContext = canvas.graphicsContext2D
+        val root = TabPane()
+        val mapTab = Tab("Map").apply {
+            isClosable = false
+            val canvas = Canvas(1280.0, 720.0)
+            graphicsContext = canvas.graphicsContext2D
+            val mapImage = Image(FileInputStream("/Users/ivangarcia/Documents/insia.jpg"))
+            graphicsContext.drawImage(mapImage, 0.0, 0.0)
+            content = canvas
+        }
 
-        // Carga y muestra la imagen de mapa
-        val mapImage = Image(FileInputStream("/Users/ivangarcia/Documents/casa4.jpg"))
-        graphicsContext.drawImage(mapImage, 0.0, 0.0)
+        val speedTab = Tab("Speed").apply {
+            isClosable = false
+            speedLabel = Label("0 km/h").apply {
+                font = Font.font(24.0)
+                textFill = Color.BLACK
+            }
+            speedPane = StackPane(speedLabel).apply {
+                style = "-fx-background-color: green;" // Color inicial verde
+                minWidth = 300.0
+                minHeight = 100.0
+            }
+            content = speedPane
+        }
 
-        primaryStage.scene = Scene(root)
-        primaryStage.title = "Map Viewer"
+        root.tabs.addAll(mapTab, speedTab)
+
+        primaryStage.scene = Scene(root, 1280.0, 720.0)
+        primaryStage.title = "Map and Speed Viewer"
         primaryStage.show()
-
-        // Añade un marcador en el centro de la imagen
-        val centerPixelX = canvas.width / 2
-        val centerPixelY = canvas.height / 2
     }
 
-    // Función para convertir latitud/longitud a píxeles y dibujar un marcador
     fun addMarker(pixelX: Double, pixelY: Double) {
         Platform.runLater {
-            graphicsContext.apply {
-                fill = javafx.scene.paint.Color.RED // Establece el color del relleno a rojo
-                fillOval(pixelX - 5, pixelY - 5, 10.0, 10.0) // Dibuja un marcador
+            graphicsContext.fill = Color.RED
+            graphicsContext.fillOval(pixelX - 5, pixelY - 5, 10.0, 10.0)
+        }
+    }
+
+    fun updateSpeedDisplay(speed: Double, status: String) {
+        Platform.runLater {
+            speedLabel.text = "$speed km/h"
+            val color = when (status) {
+                "green" -> "green"
+                "yellow" -> "yellow"
+                "red" -> "red"
+                else -> "gray"
             }
+            speedPane.style = "-fx-background-color: $color;"
         }
     }
 }
@@ -128,6 +165,58 @@ fun convert_num_fixed(num: Double): Double {
     return num
 }
 
+fun calculateDistance(coord1: UTMCoord, coord2: UTMCoord): Double {
+    return Math.sqrt(Math.pow(coord2.easting - coord1.easting, 2.0) + Math.pow(coord2.northing - coord1.northing, 2.0))
+}
+
+fun findClosestUTMCoord(target: UTMCoord, coords: List<UTMCoord>): UTMCoord {
+    return coords.minByOrNull { calculateDistance(it, target) } ?: error("La lista de coordenadas no puede estar vacía")
+}
+
+fun calculateHaversineDistance(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
+    val R = 6371.0  // Radio de la Tierra en kilómetros
+    val dLat = Math.toRadians(lat2 - lat1)
+    val dLon = Math.toRadians(lon2 - lon1)
+    val a = sin(dLat / 2).pow(2) + cos(Math.toRadians(lat1)) * cos(Math.toRadians(lat2)) * sin(dLon / 2).pow(2)
+    val c = 2 * atan2(sqrt(a), sqrt(1 - a))
+    return R * c
+
+}
+
+fun updatePositionAndCalculateSpeed(lat: Double, lon: Double, timeElapsedSeconds: Double): Double {
+    var speed = 0.0  // Inicializa speed en caso de que no se pueda calcular
+
+    if (lastLat != null && lastLon != null && lastTime != null && timeElapsedSeconds > 0) {
+        val distance = calculateHaversineDistance(lat, lon, lastLat!!, lastLon!!)  // Distancia en kilómetros
+        speed = distance / (timeElapsedSeconds / 3600.0)  // Velocidad en km/h (distancia en km, tiempo en horas)
+    }
+
+    // Actualizar las últimas coordenadas
+    lastLat = lat
+    lastLon = lon
+    lastTime = System.currentTimeMillis()
+
+    return round(speed)
+}
+
+
+
+fun getSpeedStatus(currentSpeed: Double, speedLimit: Double): String {
+    val lowerBound = speedLimit * 0.9  // 90% del límite de velocidad
+    val upperBound = speedLimit * 1.1  // 110% del límite de velocidad
+
+    println("Current Speed: $currentSpeed, Lower Bound: $lowerBound, Upper Bound: $upperBound")
+
+    return when {
+        currentSpeed < lowerBound -> "green"
+        currentSpeed > upperBound -> "red"
+        else -> "yellow"
+    }
+}
+
+
+
+
 fun main() {
     val portName = "/dev/tty.usbmodem1101" // Asegúrate de cambiar esto al puerto correcto en tu sistema
     val baudRate = 115200 // Ajusta esto a la velocidad correcta de tu puerto serie
@@ -145,6 +234,15 @@ fun main() {
         return
     }
 
+
+
+    val coordsList = File("/Users/ivangarcia/Documents/GitHub/GPS/coords.txt").readLines().map { line ->
+        val (northing, easting, speedLimit) = line.split("\\s+".toRegex()).map { it.toDouble() }
+        UTMCoord(northing, easting, speedLimit)
+    }
+
+    // Coordenadas de ejemplo para buscar el punto más cercano
+
     comPort.addDataListener(object : SerialPortDataListener {
         override fun getListeningEvents(): Int = SerialPort.LISTENING_EVENT_DATA_AVAILABLE
 
@@ -154,8 +252,16 @@ fun main() {
             val numRead = comPort.readBytes(newData, newData.size.toLong())
             val dataString = String(newData, 0, numRead)
             println("Datos recibidos: $dataString")
-            // Implementa aquí tu lógica específica para manejar los datos recibidos
+
             if (dataString.startsWith("\$GPGGA")) {
+                val currentTime = System.currentTimeMillis()
+                var timeDifference = 0.0;
+                if (lastTime != null) {
+                    timeDifference = (currentTime - lastTime!!) / 1000.0 // Time difference in seconds
+                    println("Time since last data: $timeDifference seconds")
+                }
+                lastTime = currentTime
+
                 val parts = dataString.split(",")
                 // Parsear los datos de la sentencia GGA
                 println(dataString)
@@ -165,14 +271,24 @@ fun main() {
                 val west = parts[5] == "W"
                 val arr = convertToUTM(latitude, longitude, north, west)
                 println("UTM Coordinates: EASTING=${arr[0]}, NORTHING=${arr[1]}, Zone=${arr[2]}")
+                val easting_utm = arr[0] as Double
+                val northing_utm = arr[1] as Double
                 val decimalLat = convertToDecimal(latitude)
                 val decimalLon = -convertToDecimal(longitude) // Negativo porque es Oeste
-                println(latLonToPixel(decimalLat, decimalLon,  40.549455555555554, -3.62285))
-                val (lat2, lon2) = latLonToPixel(decimalLat, decimalLon,  40.549455555555554, -3.62285)
+                println(latLonToPixel(decimalLat, decimalLon,   40.386616,  -3.631593))
+                val (lat2, lon2) = latLonToPixel(decimalLat, decimalLon,   40.386616,  -3.631593)
                 println("Decimal Latitude: $decimalLat")
                 println("Decimal Longitude: $decimalLon")
+                val targetCoord = UTMCoord(northing_utm,easting_utm,0.0)
+                val closestCoord = findClosestUTMCoord(targetCoord, coordsList)
+                val speed = updatePositionAndCalculateSpeed(decimalLat, decimalLon, timeDifference)
+                println("Velocidad actual: $speed km/h")
+                val speedStatus = getSpeedStatus(speed, closestCoord.speedLimit)
+                println("La coordenada UTM más cercana es: Northing: ${closestCoord.northing}, Easting: ${closestCoord.easting}, Speed Limit: ${closestCoord.speedLimit}")
+                println("Estado de la velocidad: $speedStatus")
                 Platform.runLater {
                     MapViewer.getInstance()?.addMarker(lat2.toDouble(), lon2.toDouble())
+                    MapViewer.getInstance()?.updateSpeedDisplay(speed, speedStatus)
                 }
             }
         }
