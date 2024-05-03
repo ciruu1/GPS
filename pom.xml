@@ -103,6 +103,11 @@
             <artifactId>gurux.serial</artifactId>
             <version>1.0.26</version>
         </dependency>
+        <dependency>
+            <groupId>org.openjfx</groupId>
+            <artifactId>javafx-controls</artifactId>
+            <version>22.0.1</version>
+        </dependency>
         <!-- Thanks for using https://jar-download.com -->
 
     </dependencies>

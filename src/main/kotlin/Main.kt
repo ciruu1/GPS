@@ -19,6 +19,7 @@ import java.io.File
 import java.io.FileInputStream
 import kotlin.math.*
 
+val FILE_PATH = "/Users/ivangarcia/Documents/GitHub/GPS/coords.txt"
 
 val imageWidthPixels = 1280 // Ancho de la imagen en píxeles
 val imageHeightPixels = 720 // Alto de la imagen en píxeles
@@ -214,7 +215,18 @@ fun getSpeedStatus(currentSpeed: Double, speedLimit: Double): String {
     }
 }
 
-
+fun calculateClosestPoint(latitude: Double, longitude: Double, list: ArrayList<PointCoordinates>): PointCoordinates {
+    var finalPoint = PointCoordinates(0.0, 0.0)
+    var distance = 10000000.0
+    var currDist: Double
+    for (point in list) {
+        currDist = sqrt((point.latitude - latitude).pow(2) + (point.longitude - longitude).pow(2))
+        if (currDist < distance)
+            distance = currDist
+        finalPoint = point
+    }
+    return finalPoint
+}
 
 
 fun main() {
@@ -236,7 +248,7 @@ fun main() {
 
 
 
-    val coordsList = File("/Users/ivangarcia/Documents/GitHub/GPS/coords.txt").readLines().map { line ->
+    val coordsList = File(FILE_PATH).readLines().map { line ->
         val (northing, easting, speedLimit) = line.split("\\s+".toRegex()).map { it.toDouble() }
         UTMCoord(northing, easting, speedLimit)
     }
@@ -284,6 +296,13 @@ fun main() {
                 val speed = updatePositionAndCalculateSpeed(decimalLat, decimalLon, timeDifference)
                 println("Velocidad actual: $speed km/h")
                 val speedStatus = getSpeedStatus(speed, closestCoord.speedLimit)
+
+                // Calcular punto más cercano LAT LON
+                val pointCoordinatesList: ArrayList<PointCoordinates> = ArrayList()
+                coordsList.forEach { pointCoordinatesList.add(UtmCoordinate(30, 'S', it.easting, it.northing).utmToPointCoordinates()) }
+                val closestpoint = calculateClosestPoint(latitude, longitude, pointCoordinatesList)
+                println("Latitude: ${closestpoint.latitude} | Longitude: ${closestpoint.longitude}")
+
                 println("La coordenada UTM más cercana es: Northing: ${closestCoord.northing}, Easting: ${closestCoord.easting}, Speed Limit: ${closestCoord.speedLimit}")
                 println("Estado de la velocidad: $speedStatus")
                 Platform.runLater {
