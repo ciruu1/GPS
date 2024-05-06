@@ -8,16 +8,16 @@ import javafx.scene.Scene
 import javafx.scene.canvas.Canvas
 import javafx.scene.canvas.GraphicsContext
 import javafx.scene.control.Label
-import javafx.scene.control.Tab
-import javafx.scene.control.TabPane
 import javafx.scene.image.Image
 import javafx.scene.layout.StackPane
+import javafx.scene.layout.VBox
 import javafx.scene.paint.Color
 import javafx.scene.text.Font
 import javafx.stage.Stage
 import java.io.File
 import java.io.FileInputStream
 import kotlin.math.*
+
 
 val FILE_PATH = "coords.txt"
 
@@ -46,31 +46,26 @@ class MapViewer : Application() {
 
     override fun start(primaryStage: Stage) {
         instance = this
-        val root = TabPane()
-        val mapTab = Tab("Map").apply {
-            isClosable = false
-            val canvas = Canvas(1280.0, 720.0)
-            graphicsContext = canvas.graphicsContext2D
-            val mapImage = Image(FileInputStream("/Users/ivangarcia/Documents/insia.jpg"))
-            graphicsContext.drawImage(mapImage, 0.0, 0.0)
-            content = canvas
+        val root = VBox()  // Contenedor vertical
+
+        // Configuración del canvas del mapa
+        val canvas = Canvas(1280.0, 620.0)  // Ajustar el tamaño para dejar espacio al indicador de velocidad
+        graphicsContext = canvas.graphicsContext2D
+        val mapImage = Image(FileInputStream("/Users/ivangarcia/Documents/insia.jpg"))
+        graphicsContext.drawImage(mapImage, 0.0, 0.0)
+
+        // Configuración del indicador de velocidad
+        speedLabel = Label("0 km/h").apply {
+            font = Font.font(24.0)
+            textFill = Color.BLACK
+        }
+        speedPane = StackPane(speedLabel).apply {
+            style = "-fx-background-color: green;"  // Color inicial verde
+            minHeight = 100.0  // Altura específica para el indicador
+            minWidth = 1280.0  // Utiliza el ancho completo
         }
 
-        val speedTab = Tab("Speed").apply {
-            isClosable = false
-            speedLabel = Label("0 km/h").apply {
-                font = Font.font(24.0)
-                textFill = Color.BLACK
-            }
-            speedPane = StackPane(speedLabel).apply {
-                style = "-fx-background-color: green;" // Color inicial verde
-                minWidth = 300.0
-                minHeight = 100.0
-            }
-            content = speedPane
-        }
-
-        root.tabs.addAll(mapTab, speedTab)
+        root.children.addAll(canvas, speedPane)  // Añade ambos componentes al VBox
 
         primaryStage.scene = Scene(root, 1280.0, 720.0)
         primaryStage.title = "Map and Speed Viewer"
@@ -81,6 +76,39 @@ class MapViewer : Application() {
         Platform.runLater {
             graphicsContext.fill = Color.RED
             graphicsContext.fillOval(pixelX - 5, pixelY - 5, 10.0, 10.0)
+        }
+    }
+
+    fun addMarkerImproved(pixelX: Double, pixelY: Double, markerType: Int) {
+        Platform.runLater {
+            when (markerType) {
+                1 -> { // Cuadrado rosa
+                    graphicsContext.fill = Color.PINK
+                    graphicsContext.fillRect(pixelX - 5, pixelY - 5, 10.0, 10.0)
+                }
+                2 -> { // Triángulo amarillo
+                    graphicsContext.fill = Color.YELLOW
+                    val xPoints = doubleArrayOf(pixelX, pixelX - 5, pixelX + 5)
+                    val yPoints = doubleArrayOf(pixelY - 5, pixelY + 5, pixelY + 5)
+                    graphicsContext.fillPolygon(xPoints, yPoints, 3)
+                }
+                3 -> { // Cruz azul
+                    graphicsContext.stroke = Color.BLUE
+                    graphicsContext.lineWidth = 2.0
+                    graphicsContext.strokeLine(pixelX - 5, pixelY, pixelX + 5, pixelY)
+                    graphicsContext.strokeLine(pixelX, pixelY - 5, pixelX, pixelY + 5)
+                }
+                4 -> { // Cruz morada
+                    graphicsContext.stroke = Color.PURPLE
+                    graphicsContext.lineWidth = 2.0
+                    graphicsContext.strokeLine(pixelX - 5, pixelY, pixelX + 5, pixelY)
+                    graphicsContext.strokeLine(pixelX, pixelY - 5, pixelX, pixelY + 5)
+                }
+                5 -> { // Punto rojo oscuro
+                    graphicsContext.fill = Color.DARKRED
+                    graphicsContext.fillOval(pixelX - 5, pixelY - 5, 10.0, 10.0)
+                }
+            }
         }
     }
 
@@ -226,9 +254,35 @@ fun calculateClosestPoint(latitude: Double, longitude: Double, list: ArrayList<L
             distance = currDist
             finalPoint = point
         }
-        //println("$currDist | $distance | ${finalPoint.point}")
+        println("$currDist | $distance | ${finalPoint.point}")
     }
     return finalPoint
+}
+
+fun drawDetectedInsiaMap(list: ArrayList<LatLonPoint>){
+    for (point in list) {
+        val (lat, lon) = latLonToPixel(point.point.latitude, point.point.longitude,   40.386616,  -3.631593)
+        if (point.speed == 10.0) {
+            MapViewer.getInstance()?.addMarkerImproved(lat.toDouble(), lon.toDouble(), 1 )
+        }
+
+        if (point.speed == 20.0) {
+            MapViewer.getInstance()?.addMarkerImproved(lat.toDouble(), lon.toDouble(), 2 )
+        }
+
+        if (point.speed == 15.0) {
+            MapViewer.getInstance()?.addMarkerImproved(lat.toDouble(), lon.toDouble(), 3 )
+        }
+
+        if (point.speed == 18.0) {
+            MapViewer.getInstance()?.addMarkerImproved(lat.toDouble(), lon.toDouble(), 4 )
+        }
+
+        if (point.speed == 5.0) {
+            MapViewer.getInstance()?.addMarkerImproved(lat.toDouble(), lon.toDouble(), 5 )
+        }
+
+    }
 }
 
 
@@ -286,10 +340,12 @@ fun main() {
                 // Calcular punto más cercano LAT LON
                 val pointCoordinatesList: ArrayList<LatLonPoint> = ArrayList()
                 coordsList.forEach { pointCoordinatesList.add(LatLonPoint(UtmCoordinate(30, 'S', it.easting, it.northing).utmToPointCoordinates(), it.speedLimit)) }
+                val test_closesspoint = calculateClosestPoint(40.386113, -3.634501, pointCoordinatesList)
+                println("Latitude: ${test_closesspoint.point.latitude} | Longitude: ${test_closesspoint.point.longitude} | SpeedLimit: ${test_closesspoint.speed}")
                 val closestpoint = calculateClosestPoint(latitude, longitude, pointCoordinatesList)
                 println("Latitude: ${closestpoint.point.latitude} | Longitude: ${closestpoint.point.longitude} | SpeedLimit: ${closestpoint.speed}")
 
-
+                drawDetectedInsiaMap(pointCoordinatesList)
                 val north = parts[3] == "N"
                 val west = parts[5] == "W"
                 val arr = convertToUTM(latitude, longitude, north, west)
@@ -306,6 +362,7 @@ fun main() {
                 val closestCoord = findClosestUTMCoord(targetCoord, coordsList)
                 val speed = updatePositionAndCalculateSpeed(decimalLat, decimalLon, timeDifference)
                 println("Velocidad actual: $speed km/h")
+
 
                 //val speedStatus = getSpeedStatus(speed, closestCoord.speedLimit)
                 val speedStatus = getSpeedStatus(speed, closestpoint.speed)
