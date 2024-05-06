@@ -9,6 +9,7 @@ import javafx.scene.canvas.Canvas
 import javafx.scene.canvas.GraphicsContext
 import javafx.scene.control.Label
 import javafx.scene.image.Image
+import javafx.scene.image.ImageView
 import javafx.scene.layout.StackPane
 import javafx.scene.layout.VBox
 import javafx.scene.paint.Color
@@ -49,7 +50,12 @@ class MapViewer : Application() {
 
     override fun start(primaryStage: Stage) {
         instance = this
-        val root = VBox()  // Contenedor vertical
+
+        val mainStack = StackPane()  // StackPane principal para permitir la superposición de elementos
+
+        val root = VBox()  // Contenedor vertical para el mapa y el indicador de velocidad
+        root.minWidth = 1280.0
+        root.minHeight = 720.0
 
         // Configuración del canvas del mapa
         val canvas = Canvas(1280.0, 620.0)  // Ajustar el tamaño para dejar espacio al indicador de velocidad
@@ -58,11 +64,11 @@ class MapViewer : Application() {
         graphicsContext.drawImage(mapImage, 0.0, 0.0)
 
         // Configuración del indicador de velocidad
-        speedLabel = Label("0 km/h").apply {
+        val speedLabel = Label("0 km/h").apply {
             font = Font.font(24.0)
             textFill = Color.BLACK
         }
-        speedPane = StackPane(speedLabel).apply {
+        val speedPane = StackPane(speedLabel).apply {
             style = "-fx-background-color: green;"  // Color inicial verde
             minHeight = 100.0  // Altura específica para el indicador
             minWidth = 1280.0  // Utiliza el ancho completo
@@ -70,10 +76,22 @@ class MapViewer : Application() {
 
         root.children.addAll(canvas, speedPane)  // Añade ambos componentes al VBox
 
-        primaryStage.scene = Scene(root, 1280.0, 720.0)
+        // Cargar y configurar la imagen de la leyenda
+        val legendImage = Image(FileInputStream("/Users/ivangarcia/Desktop/legend.png"))
+        val legendView = ImageView(legendImage)
+        legendView.setFitWidth(200.0)  // Ajustar el tamaño según sea necesario
+        legendView.setFitHeight(100.0)
+        legendView.setPreserveRatio(true)
+        StackPane.setAlignment(legendView, javafx.geometry.Pos.TOP_RIGHT)  // Posicionar la leyenda en la esquina superior derecha
+
+        mainStack.children.add(root)  // Añade el VBox al StackPane principal
+        mainStack.children.add(legendView)  // Añade la leyenda sobre el VBox
+
+        primaryStage.scene = Scene(mainStack, 1280.0, 720.0)
         primaryStage.title = "Map and Speed Viewer"
         primaryStage.show()
     }
+
 
     fun addMarker(pixelX: Double, pixelY: Double) {
         Platform.runLater {
