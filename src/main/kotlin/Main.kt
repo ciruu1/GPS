@@ -47,7 +47,6 @@ class MapViewer : Application() {
 
     override fun start(primaryStage: Stage) {
         instance = this
-
         val mainStack = StackPane()  // StackPane principal para permitir la superposición de elementos
 
         val root = VBox()  // Contenedor vertical para el mapa y el indicador de velocidad
@@ -55,34 +54,33 @@ class MapViewer : Application() {
         root.minHeight = 720.0
 
         // Configuración del canvas del mapa
-        val canvas = Canvas(1280.0, 620.0)  // Ajustar el tamaño para dejar espacio al indicador de velocidad
+        val canvas = Canvas(1280.0, 620.0)
         graphicsContext = canvas.graphicsContext2D
         val mapImage = Image(FileInputStream("/Users/ivangarcia/Documents/insia.jpg"))
         graphicsContext.drawImage(mapImage, 0.0, 0.0)
 
         // Configuración del indicador de velocidad
-        val speedLabel = Label("0 km/h").apply {
+        speedLabel = Label("0 km/h").apply {
             font = Font.font(24.0)
             textFill = Color.BLACK
         }
-        val speedPane = StackPane(speedLabel).apply {
-            style = "-fx-background-color: green;"  // Color inicial verde
-            minHeight = 100.0  // Altura específica para el indicador
-            minWidth = 1280.0  // Utiliza el ancho completo
+        speedPane = StackPane(speedLabel).apply {
+            style = "-fx-background-color: green;"
+            minHeight = 100.0
+            minWidth = 1280.0
         }
 
-        root.children.addAll(canvas, speedPane)  // Añade ambos componentes al VBox
+        root.children.addAll(canvas, speedPane)
 
         // Cargar y configurar la imagen de la leyenda
         val legendImage = Image(FileInputStream("/Users/ivangarcia/Desktop/legend.png"))
         val legendView = ImageView(legendImage)
-        legendView.setFitWidth(200.0)  // Ajustar el tamaño según sea necesario
+        legendView.setFitWidth(200.0)
         legendView.setFitHeight(100.0)
         legendView.setPreserveRatio(true)
-        StackPane.setAlignment(legendView, javafx.geometry.Pos.TOP_RIGHT)  // Posicionar la leyenda en la esquina superior derecha
+        StackPane.setAlignment(legendView, javafx.geometry.Pos.TOP_RIGHT)
 
-        mainStack.children.add(root)  // Añade el VBox al StackPane principal
-        mainStack.children.add(legendView)  // Añade la leyenda sobre el VBox
+        mainStack.children.addAll(root, legendView)
 
         primaryStage.scene = Scene(mainStack, 1280.0, 720.0)
         primaryStage.title = "Map and Speed Viewer"
@@ -272,7 +270,7 @@ fun calculateClosestPoint(latitude: Double, longitude: Double, list: ArrayList<L
             distance = currDist
             finalPoint = point
         }
-        println("$currDist | $distance | ${finalPoint.point}")
+        //println("$currDist | $distance | ${finalPoint.point}")
     }
     return finalPoint
 }
@@ -354,14 +352,15 @@ fun main() {
                 println(dataString)
                 val latitude = parts[2].toDouble()
                 val longitude = parts[4].toDouble()
-
+                val decimalLat = convertToDecimal(latitude)
+                val decimalLon = -convertToDecimal(longitude)
                 // Calcular punto más cercano LAT LON
                 val pointCoordinatesList: ArrayList<LatLonPoint> = ArrayList()
                 coordsList.forEach { pointCoordinatesList.add(LatLonPoint(UtmCoordinate(30, 'S', it.easting, it.northing).utmToPointCoordinates(), it.speedLimit)) }
-                val test_closesspoint = calculateClosestPoint(40.386113, -3.634501, pointCoordinatesList)
-                println("Latitude: ${test_closesspoint.point.latitude} | Longitude: ${test_closesspoint.point.longitude} | SpeedLimit: ${test_closesspoint.speed}")
-                val closestpoint = calculateClosestPoint(latitude, longitude, pointCoordinatesList)
-                println("Latitude: ${closestpoint.point.latitude} | Longitude: ${closestpoint.point.longitude} | SpeedLimit: ${closestpoint.speed}")
+//                val test_closesspoint = calculateClosestPoint(40.386113, -3.634501, pointCoordinatesList)
+//                println("Latitude: ${test_closesspoint.point.latitude} | Longitude: ${test_closesspoint.point.longitude} | SpeedLimit: ${test_closesspoint.speed}")
+//                val closestpoint = calculateClosestPoint(latitude, longitude, pointCoordinatesList)
+//                println("Latitude: ${closestpoint.point.latitude} | Longitude: ${closestpoint.point.longitude} | SpeedLimit: ${closestpoint.speed}")
 
                 drawDetectedInsiaMap(pointCoordinatesList)
                 val north = parts[3] == "N"
@@ -370,20 +369,19 @@ fun main() {
                 println("UTM Coordinates: EASTING=${arr[0]}, NORTHING=${arr[1]}, Zone=${arr[2]}")
                 val easting_utm = arr[0] as Double
                 val northing_utm = arr[1] as Double
-                val decimalLat = convertToDecimal(latitude)
-                val decimalLon = -convertToDecimal(longitude) // Negativo porque es Oeste
                 println(latLonToPixel(decimalLat, decimalLon,   40.386616,  -3.631593))
                 val (lat2, lon2) = latLonToPixel(decimalLat, decimalLon,   40.386616,  -3.631593)
                 println("Decimal Latitude: $decimalLat")
                 println("Decimal Longitude: $decimalLon")
+                val closestpoint2 = calculateClosestPoint(decimalLat, decimalLon, pointCoordinatesList)
+                println("Latitude: ${closestpoint2.point.latitude} | Longitude: ${closestpoint2.point.longitude} | SpeedLimit: ${closestpoint2.speed}")
                 val targetCoord = UTMCoord(northing_utm,easting_utm,0.0)
                 val closestCoord = findClosestUTMCoord(targetCoord, coordsList)
                 val speed = updatePositionAndCalculateSpeed(decimalLat, decimalLon, timeDifference)
                 println("Velocidad actual: $speed km/h")
 
 
-                //val speedStatus = getSpeedStatus(speed, closestCoord.speedLimit)
-                val speedStatus = getSpeedStatus(speed, closestpoint.speed)
+                val speedStatus = getSpeedStatus(speed, closestpoint2.speed)
 
                 println("La coordenada UTM más cercana es: Northing: ${closestCoord.northing}, Easting: ${closestCoord.easting}, Speed Limit: ${closestCoord.speedLimit}")
                 println("Estado de la velocidad: $speedStatus")
