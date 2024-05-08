@@ -376,6 +376,8 @@ fun main() {
                 println(dataString)
                 val latitude = parts[2].toDouble()
                 val longitude = parts[4].toDouble()
+                val decimalLat = convertToDecimal(latitude)
+                val decimalLon = -convertToDecimal(longitude) // Negativo porque es Oeste
 
                 // Calcular punto más cercano LAT LON
                 val pointCoordinatesList: ArrayList<LatLonPoint> = ArrayList()
@@ -387,7 +389,7 @@ fun main() {
                 }
                 val test_closesspoint = calculateClosestPoint(40.386113, -3.634501, pointCoordinatesList)
                 println("Latitude: ${test_closesspoint.point.latitude} | Longitude: ${test_closesspoint.point.longitude} | SpeedLimit: ${test_closesspoint.speed}")
-                val closestpoint = calculateClosestPoint(latitude, longitude, pointCoordinatesList)
+                val closestpoint = calculateClosestPoint(decimalLat, decimalLon, pointCoordinatesList)
                 println("Latitude: ${closestpoint.point.latitude} | Longitude: ${closestpoint.point.longitude} | SpeedLimit: ${closestpoint.speed}")
 
                 drawDetectedInsiaMap(pointCoordinatesList)
@@ -397,8 +399,7 @@ fun main() {
                 println("UTM Coordinates: EASTING=${arr[0]}, NORTHING=${arr[1]}, Zone=${arr[2]}")
                 val easting_utm = arr[0] as Double
                 val northing_utm = arr[1] as Double
-                val decimalLat = convertToDecimal(latitude)
-                val decimalLon = -convertToDecimal(longitude) // Negativo porque es Oeste
+                
                 println(latLonToPixel(decimalLat, decimalLon,   40.386616,  -3.631593))
                 val (lat2, lon2) = latLonToPixel(decimalLat, decimalLon,   40.386616,  -3.631593)
                 println("Decimal Latitude: $decimalLat")
