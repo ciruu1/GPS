@@ -30,6 +30,9 @@ val groundCoverageHeightMeters = 244.0
 var lastLat: Double? = null
 var lastLon: Double? = null
 var lastTime: Long? = null  // Tiempo en milisegundos
+
+var lastIndex = 0
+
 data class UTMCoord(val northing: Double, val easting: Double, val speedLimit: Double)
 class MapViewer : Application() {
     private lateinit var graphicsContext: GraphicsContext
@@ -262,7 +265,7 @@ fun getSpeedStatus(currentSpeed: Double, speedLimit: Double): String {
 }
 
 fun calculateClosestPoint(latitude: Double, longitude: Double, list: ArrayList<LatLonPoint>): LatLonPoint {
-    var finalPoint = LatLonPoint(PointCoordinates(0.0, 0.0), 0.0)
+    var finalPoint = LatLonPoint(PointCoordinates(0.0, 0.0), 0.0, 0)
     var distance = 10000000.0
     var currDist: Double
     for (point in list) {
@@ -301,6 +304,25 @@ fun drawDetectedInsiaMap(list: ArrayList<LatLonPoint>){
         }
 
     }
+}
+
+fun comprobarSentidoAntiHorario(currentIndex: Int, lastIndex: Int, max: Int): Boolean {
+    val window = 5
+    // ANTIHORARIO
+    if (lastIndex <= currentIndex/* && lastIndex <= max - window*/) {
+        return true
+    }
+    if (lastIndex > currentIndex && lastIndex > max - window) {
+        return true
+    }
+    // HORARIO
+    if (lastIndex < currentIndex && lastIndex < max - window) {
+        return false
+    }
+    if (lastIndex >= currentIndex/* && lastIndex >= window*/) {
+        return false
+    }
+    return false
 }
 
 
@@ -357,7 +379,12 @@ fun main() {
 
                 // Calcular punto más cercano LAT LON
                 val pointCoordinatesList: ArrayList<LatLonPoint> = ArrayList()
-                coordsList.forEach { pointCoordinatesList.add(LatLonPoint(UtmCoordinate(30, 'S', it.easting, it.northing).utmToPointCoordinates(), it.speedLimit)) }
+                //coordsList.forEach { pointCoordinatesList.add(LatLonPoint(UtmCoordinate(30, 'S', it.easting, it.northing).utmToPointCoordinates(), it.speedLimit)) }
+                var i = 1
+                for (coord in coordsList) {
+                    pointCoordinatesList.add(LatLonPoint(UtmCoordinate(30, 'S', coord.easting, coord.northing).utmToPointCoordinates(), coord.speedLimit, i))
+                    i++
+                }
                 val test_closesspoint = calculateClosestPoint(40.386113, -3.634501, pointCoordinatesList)
                 println("Latitude: ${test_closesspoint.point.latitude} | Longitude: ${test_closesspoint.point.longitude} | SpeedLimit: ${test_closesspoint.speed}")
                 val closestpoint = calculateClosestPoint(latitude, longitude, pointCoordinatesList)
@@ -381,12 +408,20 @@ fun main() {
                 val speed = updatePositionAndCalculateSpeed(decimalLat, decimalLon, timeDifference)
                 println("Velocidad actual: $speed km/h")
 
+                if (comprobarSentidoAntiHorario(closestpoint.index, lastIndex, pointCoordinatesList.size))
+                    println("Sentido antihorario")
+                else
+                    println("Sentido horario")
 
                 //val speedStatus = getSpeedStatus(speed, closestCoord.speedLimit)
                 val speedStatus = getSpeedStatus(speed, closestpoint.speed)
 
                 println("La coordenada UTM más cercana es: Northing: ${closestCoord.northing}, Easting: ${closestCoord.easting}, Speed Limit: ${closestCoord.speedLimit}")
                 println("Estado de la velocidad: $speedStatus")
+
+                // Guardamos el indice para comprobar el sentido de la marcha
+                lastIndex = closestpoint.index
+
                 Platform.runLater {
                     MapViewer.getInstance()?.addMarker(lat2.toDouble(), lon2.toDouble())
                     MapViewer.getInstance()?.updateSpeedDisplay(speed, speedStatus)
@@ -400,7 +435,8 @@ fun main() {
 
 }
 
-class LatLonPoint(point: PointCoordinates, speed: Double) {
+class LatLonPoint(point: PointCoordinates, speed: Double, index: Int) {
     var point = point
     var speed = speed
+    var index = index
 }
