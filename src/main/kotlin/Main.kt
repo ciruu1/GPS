@@ -34,6 +34,8 @@ var lastTime: Long? = null  // Tiempo en milisegundos
 
 var lastIndex = 0
 
+var historyList = ArrayList<PointCoordinates>()
+
 data class UTMCoord(val northing: Double, val easting: Double, val speedLimit: Double)
 class MapViewer : Application() {
     private lateinit var graphicsContext: GraphicsContext
@@ -414,6 +416,12 @@ fun main() {
 
                 println("$latitude, $longitude")
 
+                if (historyList.size >= 50) {
+                    historyList.removeFirst()
+                }
+
+                historyList.add(PointCoordinates(longitude, latitude))
+
                 val mapCenter = MapViewer.getInstance()?.getMapCenter()
                 val mapCenterLat = mapCenter?.first ?: return
                 val mapCenterLon = mapCenter?.second ?: return
@@ -430,6 +438,10 @@ fun main() {
                 if (pixelX < 100 || pixelX > 1180 || pixelY < 100 || pixelY > 620) {
                     Platform.runLater {
                         MapViewer.getInstance()?.updateMapCenter(latitude, longitude)
+                        for (point in historyList) {
+                            val (pixelX, pixelY) = latLonToPixel(point.latitude, point.longitude, latitude, longitude)
+                            MapViewer.getInstance()?.addMarker(pixelX.toDouble(), pixelY.toDouble())
+                        }
                     }
                 }
             }
