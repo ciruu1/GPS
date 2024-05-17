@@ -9,15 +9,18 @@ import javafx.scene.canvas.Canvas
 import javafx.scene.canvas.GraphicsContext
 import javafx.scene.control.Label
 import javafx.scene.image.Image
+import javafx.scene.layout.BorderPane
 import javafx.scene.layout.StackPane
-import javafx.scene.layout.VBox
 import javafx.scene.paint.Color
+import javafx.scene.shape.Circle
 import javafx.scene.text.Font
 import javafx.stage.Stage
-import java.io.File
-import java.io.FileInputStream
-import java.io.FileOutputStream
-import java.io.InputStream
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONObject
+import java.io.*
 import java.net.URL
 import kotlin.math.*
 
@@ -38,6 +41,113 @@ var INSIA = false
 var lastIndex = 0
 
 var historyList = ArrayList<PointCoordinates>()
+data class OverpassElement(
+    val type: String,
+    val id: Long,
+    val lat: Double? = null,
+    val lon: Double? = null,
+    val nodes: List<Long>? = null,
+    val tags: Map<String, String>? = null
+)
+
+data class OverpassResponse(
+    val elements: List<OverpassElement>
+)
+
+class OverpassApiClient {
+    private val client = OkHttpClient()
+
+    fun getNearestRoad(lat: Double, lon: Double): OverpassResponse {
+        val query = """
+            [out:json];
+            (way(around:25,$lat,$lon)["highway"];
+            );
+            out body;
+            >;
+            out skel qt;
+        """.trimIndent()
+
+        val url = "http://overpass-api.de/api/interpreter?data=${query}"
+
+
+        val request = Request.Builder()
+            .url(url)
+            .build()
+
+        val response = client.newCall(request).execute()
+        if (!response.isSuccessful) throw IOException("Unexpected code $response")
+
+        val responseText = response.body?.string() ?: throw IOException("Response body is null")
+        return parseResponse(responseText)
+    }
+
+    private fun parseResponse(responseText: String): OverpassResponse {
+        val jsonObject = JSONObject(responseText)
+        val elementsArray = jsonObject.getJSONArray("elements")
+        val elements = mutableListOf<OverpassElement>()
+
+        for (i in 0 until elementsArray.length()) {
+            val elementObject = elementsArray.getJSONObject(i)
+            val type = elementObject.getString("type")
+            val id = elementObject.getLong("id")
+            val lat = elementObject.optDouble("lat", Double.NaN).takeIf { !it.isNaN() }
+            val lon = elementObject.optDouble("lon", Double.NaN).takeIf { !it.isNaN() }
+            val nodes = elementObject.optJSONArray("nodes")?.let { jsonArray ->
+                List(jsonArray.length()) { index -> jsonArray.getLong(index) }
+            }
+            val tags = elementObject.optJSONObject("tags")?.let { jsonObject ->
+                jsonObject.keys().asSequence().associateWith { jsonObject.getString(it) }
+            }
+
+            elements.add(OverpassElement(type, id, lat, lon, nodes, tags))
+        }
+
+        return OverpassResponse(elements)
+    }
+}
+
+
+data class TelegramMessage(
+    val chat_id: String,
+    val text: String? = null,
+    val latitude: Double? = null,
+    val longitude: Double? = null
+)
+
+fun sendTelegramMessage(botToken: String, chatId: String, messageText: String? = null, latitude: Double? = null, longitude: Double? = null) {
+    val client = OkHttpClient()
+
+    val message = JSONObject().apply {
+        put("chat_id", chatId)
+        messageText?.let { put("text", it) }
+        latitude?.let { put("latitude", it) }
+        longitude?.let { put("longitude", it) }
+    }
+
+    val messageBody = message.toString().toRequestBody("application/json; charset=utf-8".toMediaTypeOrNull())
+
+    val url = when {
+        messageText != null -> "https://api.telegram.org/bot$botToken/sendMessage"
+        latitude != null && longitude != null -> "https://api.telegram.org/bot$botToken/sendLocation"
+        else -> throw IllegalArgumentException("Message text or latitude and longitude must be provided")
+    }
+
+    val request = Request.Builder()
+        .url(url)
+        .post(messageBody)
+        .build()
+
+    try {
+        client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) throw IOException("Unexpected code $response")
+            println("Message sent successfully.")
+        }
+    } catch (e: Exception) {
+        println("Error sending message: ${e.message}")
+    }
+}
+
+
 
 data class UTMCoord(val northing: Double, val easting: Double, val speedLimit: Double)
 class MapViewer : Application() {
@@ -45,6 +155,12 @@ class MapViewer : Application() {
     private lateinit var canvas: Canvas
     private lateinit var speedLabel: Label
     private lateinit var speedPane: StackPane
+    private lateinit var infoPane: StackPane
+    private lateinit var infoLabel: Label
+    private lateinit var speedLimitLabel: Label
+    private lateinit var speedLimitCircle: StackPane
+    private lateinit var speedLimitLabel2: Label
+    private lateinit var speedLimitCircle2: StackPane
     private var mapCenterLat = 40.714728
     private var mapCenterLon = -73.998672
 
@@ -63,7 +179,8 @@ class MapViewer : Application() {
 
     override fun start(primaryStage: Stage) {
         instance = this
-        val root = VBox()
+        val root = StackPane()
+
         val canvas = Canvas(1280.0, 620.0)  // Ajustar el tamaño para dejar espacio al indicador de velocidad
         graphicsContext = canvas.graphicsContext2D
         val mapImage = Image(FileInputStream("/Users/ivangarcia/Documents/insia.jpg"))
@@ -75,17 +192,50 @@ class MapViewer : Application() {
             font = Font.font(24.0)
             textFill = Color.BLACK
         }
+
         speedPane = StackPane(speedLabel).apply {
             style = "-fx-background-color: green;"
             minHeight = 100.0
-            minWidth = 1280.0
+            minWidth = 1080.0
         }
 
-        root.children.addAll(canvas, speedPane)
+        infoLabel = Label().apply {
+            font = Font.font(16.0)
+            textFill = Color.WHITE
+        }
+        infoPane = StackPane(infoLabel).apply {
+            style = "-fx-background-color: rgba(0, 0, 0, 0.7);"
+            maxWidth = 250.0
+            minWidth = 250.0
+        }
+
+        speedLimitLabel = Label("50").apply {
+            font = Font.font(24.0)
+            textFill = Color.BLACK
+        }
+        val circle = Circle(30.0, Color.WHITE).apply {
+            stroke = Color.RED
+            strokeWidth = 6.0
+        }
+        speedLimitCircle = StackPane(circle, speedLimitLabel).apply {
+            translateX = -600.0
+            translateY = 200.0
+        }
+
+
+        val borderPane = BorderPane()
+        borderPane.center = canvas
+        borderPane.bottom = speedPane
+
+        root.children.addAll(borderPane, infoPane, speedLimitCircle)
+        StackPane.setAlignment(infoPane, javafx.geometry.Pos.CENTER_RIGHT)
+        StackPane.setAlignment(speedLimitCircle, javafx.geometry.Pos.TOP_LEFT)
+
         primaryStage.scene = Scene(root, 1280.0, 720.0)
         primaryStage.title = "Map and Speed Viewer"
         primaryStage.show()
     }
+
 
     fun loadMapImage() {
         Platform.runLater {
@@ -198,6 +348,92 @@ class MapViewer : Application() {
             }
             speedPane.style = "-fx-background-color: $color;"
         }
+    }
+
+    private fun updateRoadInfoDisplay(info: Map<String, String>) {
+        Platform.runLater {
+            val infoText = info.entries
+                .filter { it.value != "N/A" }
+                .joinToString("\n") { "${it.key}: ${it.value}" }
+
+            infoLabel.text = infoText
+            infoPane.style = "-fx-background-color: rgba(255, 255, 255, 0.8);"
+        }
+    }
+
+    private fun translateHighway(highway: String): String {
+        return when (highway) {
+            "motorway" -> "Autopista"
+            "trunk" -> "Carretera Principal"
+            "primary" -> "Carretera Primaria"
+            "secondary" -> "Carretera Secundaria"
+            "tertiary" -> "Poblado"
+            "unclassified" -> "No Clasificada"
+            "residential" -> "Residencial"
+            "service" -> "Servicio"
+            "living_street" -> "Calle Residencial"
+            "pedestrian" -> "Peatonal"
+            "track" -> "Camino"
+            "bus_guideway" -> "Guía de Autobús"
+            "escape" -> "Vía de Escape"
+            "raceway" -> "Pista de Carreras"
+            "road" -> "Carretera"
+            else -> highway
+        }
+    }
+
+    private fun translateLanes(lanes: String): String {
+        return when (lanes) {
+            "1" -> "Un carril"
+            "2" -> "Dos carriles"
+            "3" -> "Tres carriles"
+            "4" -> "Cuatro carriles"
+            else -> "$lanes carriles"
+        }
+    }
+
+    private fun translateWay(lanes: String): String {
+        return when (lanes) {
+            "Yes" -> "Unico sentido"
+            "No" -> "Doble sentido"
+            else -> "Unico sentido"
+        }
+    }
+
+    private fun getDefaultMaxSpeed(highway: String): String {
+        return when (highway) {
+            "motorway" -> "120" // Autopista
+            "trunk" -> "100" // Carretera Principal
+            "primary" -> "90" // Carretera Primaria
+            "secondary" -> "80" // Carretera Secundaria
+            "tertiary" -> "50" // Poblado
+            "residential" -> "30" // Residencial
+            "living_street" -> "20" // Calle Residencial
+            else -> "50" // Default
+        }
+    }
+
+    fun updateInfoPane(
+        highway: String, intRef: String, lanes: String, maxspeed: String, name: String,
+        oneway: String, ref: String, refColour: String, sourceName: String, surface: String,
+        turnLanes: String, wikidata: String, wikipedia: String
+    ) {
+        val translatedHighway = translateHighway(highway)
+        val translatedLanes = if (lanes != "N/A") translateLanes(lanes) else "N/A"
+        val speed = if (maxspeed != "N/A") maxspeed else getDefaultMaxSpeed(highway)
+        val translatedoneway = translateWay(oneway)
+
+        val info = buildString {
+            if (translatedHighway != "N/A") append("Tipo de via: $translatedHighway\n")
+            if (translatedLanes != "N/A") append("Carriles: $translatedLanes\n")
+            if (speed != "N/A") append("Limite de velocidad: $speed km/h\n")
+            if (name != "N/A") append("Nombre: $name\n")
+            if (oneway != "N/A") append("$translatedoneway\n")
+            if (surface != "N/A") append("Superficie: $surface\n")
+        }
+        infoLabel.text = info
+        speedLabel.text = "$speed km/h"
+        speedLimitLabel.text = speed
     }
 }
 
@@ -378,6 +614,28 @@ fun comprobarSentidoAntiHorario(currentIndex: Int, lastIndex: Int, max: Int): Bo
     return false
 }
 
+var lastSpeed = 0.0
+
+fun checkForAccident(
+    botToken: String,
+    chatId: String,
+    currentSpeed: Double,
+    latitude: Double,
+    longitude: Double,
+    highwayType: String
+) {
+    if (highwayType == "motorway" && (lastSpeed - currentSpeed) > 50) {
+        val messageText = "Possible accident detected!"
+        sendTelegramMessage(botToken, chatId, messageText)
+        sendTelegramMessage(botToken, chatId, latitude = latitude, longitude = longitude)
+    }
+
+    val messageText = "Possible accident detected!"
+    sendTelegramMessage(botToken, chatId, messageText)
+    sendTelegramMessage(botToken, chatId, latitude = latitude, longitude = longitude)
+    lastSpeed = currentSpeed
+}
+
 
 
 
@@ -390,6 +648,7 @@ fun main() {
     comPort.parity = SerialPort.NO_PARITY
     comPort.numStopBits = SerialPort.ONE_STOP_BIT
     comPort.numDataBits = 8
+    val apiClient = OverpassApiClient()
 
     if (comPort.openPort()) {
         println("Puerto abierto exitosamente.")
@@ -411,7 +670,6 @@ fun main() {
             val newData = ByteArray(comPort.bytesAvailable())
             val numRead = comPort.readBytes(newData, newData.size.toLong())
             val dataString = String(newData, 0, numRead)
-            print(dataString)
             if (dataString.startsWith("\$GPGGA")) {
                 val parts = dataString.split(",")
                 val latitude = convertToDecimal(parts[2].toDouble())
@@ -444,8 +702,6 @@ fun main() {
                     i++
                 }
                 val closestpoint = calculateClosestPoint(latitude, longitude, pointCoordinatesList)
-                // TODO Calcular distancia al punto más cercano de la lista, si es menos de 10m(por ejemplo) estamos en
-                //  la pista del INSIA y entonces activamos la funcionalidad de la práctica 3
                 if (calculateHaversineDistance(closestpoint.point.latitude, closestpoint.point.longitude, latitude, longitude) < 10.0)
                     INSIA = true
 
@@ -465,6 +721,53 @@ fun main() {
                     }
                     val (pixelX2, pixelY2) = latLonToPixel(40.55231307914895, -3.6183565012807204, latitude, longitude)
                     MapViewer.getInstance()?.addMarker(pixelX2.toDouble(), pixelY2.toDouble())
+
+                    try {
+                        val response = apiClient.getNearestRoad(latitude, longitude)
+                        response.elements.forEach { element ->
+                            if(element.type == "way"){
+                                println("Type: ${element.type}, ID: ${element.id}, Lat: ${element.lat}, Lon: ${element.lon}, Tags: ${element.tags}")
+                                // Asignar tags a variables
+                                val tags = element.tags as Map<String, String>
+                                val highway = tags["highway"] ?: "N/A"
+                                val intRef = tags["int_ref"] ?: "N/A"
+                                val lanes = tags["lanes"] ?: "N/A"
+                                val maxspeed = tags["maxspeed"] ?: "N/A"
+                                val name = tags["name"] ?: "N/A"
+                                val oneway = tags["oneway"] ?: "N/A"
+                                val ref = tags["ref"] ?: "N/A"
+                                val refColour = tags["ref:colour"] ?: "N/A"
+                                val sourceName = tags["source:name"] ?: "N/A"
+                                val surface = tags["surface"] ?: "N/A"
+                                val turnLanes = tags["turn:lanes"] ?: "N/A"
+                                val wikidata = tags["wikidata"] ?: "N/A"
+                                val wikipedia = tags["wikipedia"] ?: "N/A"
+
+                                // Mostrar los detalles por pantalla
+                                println("Highway: $highway")
+                                println("Int_ref: $intRef")
+                                println("Lanes: $lanes")
+                                println("Maxspeed: $maxspeed")
+                                println("Name: $name")
+                                println("Oneway: $oneway")
+                                println("Ref: $ref")
+                                println("Ref (colour): $refColour")
+                                println("Source (name): $sourceName")
+                                println("Surface: $surface")
+                                println("Turn (lanes): $turnLanes")
+                                println("Wikidata: $wikidata")
+                                println("Wikipedia: $wikipedia")
+
+
+
+                                MapViewer.getInstance()?.updateInfoPane(highway, intRef, lanes, maxspeed, name, oneway, ref, refColour, sourceName, surface, turnLanes, wikidata, wikipedia)
+                                checkForAccident("6982141211:AAGIRNGP_GlnRwb3afpOmTuQU6chTqTiaIE","-4218279163",speed,latitude, longitude, highway)
+                            }
+                        }
+
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
 
                 }
 
