@@ -39,6 +39,10 @@ var lastIndex = 0
 
 var historyList = ArrayList<PointCoordinates>()
 
+var updateCenter = true
+var centerLat = 0.0
+var centerLon = 0.0
+
 data class UTMCoord(val northing: Double, val easting: Double, val speedLimit: Double)
 class MapViewer : Application() {
     private lateinit var graphicsContext: GraphicsContext
@@ -420,6 +424,12 @@ fun main() {
                 val timeDifference = (currentTime - (lastTime ?: currentTime)) / 1000.0
                 lastTime = currentTime
 
+                if (updateCenter) {
+                    centerLat = latitude
+                    centerLon = longitude
+                    updateCenter = false
+                }
+
                 println("Current Position: $latitude, $longitude")
 
                 if (historyList.size >= 50) {
@@ -469,7 +479,20 @@ fun main() {
                 }
 
                 // Check if the user is near the edge of the map and update map center proactively
-                if (shouldUpdateMap(pixelX, pixelY)) {
+                /*if (shouldUpdateMap(pixelX, pixelY)) {
+                    Platform.runLater {
+                        MapViewer.getInstance()?.updateMapCenter(latitude, longitude)
+                        // Re-draw all markers on the new map center
+                        for (point in historyList) {
+                            val (pixelX, pixelY) = latLonToPixel(point.latitude, point.longitude, latitude, longitude)
+                            MapViewer.getInstance()?.addMarker(pixelX.toDouble(), pixelY.toDouble())
+                        }
+                    }
+                }*/
+
+                // Check if the user is near the edge of the map and update map center proactively
+                if (calculateHaversineDistance(centerLat, centerLon, latitude, longitude) > 10.0) {
+                    updateCenter = true
                     Platform.runLater {
                         MapViewer.getInstance()?.updateMapCenter(latitude, longitude)
                         // Re-draw all markers on the new map center
@@ -486,11 +509,11 @@ fun main() {
     Application.launch(MapViewer::class.java)
 }
 
-fun shouldUpdateMap(pixelX: Int, pixelY: Int): Boolean {
+/*fun shouldUpdateMap(pixelX: Int, pixelY: Int): Boolean {
     val updateThreshold = 100  // threshold in pixels from the edge of the map
     return pixelX < updateThreshold || pixelX > imageWidthPixels - updateThreshold ||
             pixelY < updateThreshold || pixelY > imageHeightPixels - updateThreshold
-}
+}*/
 
 
 class LatLonPoint(point: PointCoordinates, speed: Double, index: Int) {
