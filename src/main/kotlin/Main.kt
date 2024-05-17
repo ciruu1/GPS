@@ -14,6 +14,7 @@ import javafx.scene.layout.VBox
 import javafx.scene.paint.Color
 import javafx.scene.text.Font
 import javafx.stage.Stage
+import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.InputStream
@@ -31,6 +32,8 @@ val groundCoverageHeightMeters = 244.0
 var lastLat: Double? = null
 var lastLon: Double? = null
 var lastTime: Long? = null  // Tiempo en milisegundos
+
+var INSIA = false
 
 var lastIndex = 0
 
@@ -395,6 +398,11 @@ fun main() {
         return
     }
 
+    val coordsList = File(FILE_PATH).readLines().map { line ->
+        val (northing, easting, speedLimit) = line.split("\\s+".toRegex()).map { it.toDouble() }
+        UTMCoord(northing, easting, speedLimit)
+    }
+
     comPort.addDataListener(object : SerialPortDataListener {
         override fun getListeningEvents(): Int = SerialPort.LISTENING_EVENT_DATA_AVAILABLE
 
@@ -429,6 +437,37 @@ fun main() {
                 val (pixelX, pixelY) = latLonToPixel(latitude, longitude, mapCenterLat, mapCenterLon)
 
                 val (pixelX2, pixelY2) = latLonToPixel(40.550085, -3.622272, mapCenterLat, mapCenterLon)
+
+                val speed = updatePositionAndCalculateSpeed(latitude, longitude, timeDifference)
+                println("Velocidad actual: $speed km/h")
+
+                // Calcular punto más cercano LAT LON
+                val pointCoordinatesList: ArrayList<LatLonPoint> = ArrayList()
+                //coordsList.forEach { pointCoordinatesList.add(LatLonPoint(UtmCoordinate(30, 'S', it.easting, it.northing).utmToPointCoordinates(), it.speedLimit)) }
+                var i = 1
+                for (coord in coordsList) {
+                    pointCoordinatesList.add(LatLonPoint(UtmCoordinate(30, 'S', coord.easting, coord.northing).utmToPointCoordinates(), coord.speedLimit, i))
+                    i++
+                }
+                val closestpoint = calculateClosestPoint(latitude, longitude, pointCoordinatesList)
+                // TODO Calcular distancia al punto más cercano de la lista, si es menos de 10m(por ejemplo) estamos en
+                //  la pista del INSIA y entonces activamos la funcionalidad de la práctica 3
+                if (false)
+                    INSIA = true
+
+
+                val north = parts[3] == "N"
+                val west = parts[5] == "W"
+                val arr = convertToUTM(parts[2].toDouble(), parts[4].toDouble(), north, west)
+                println("UTM Coordinates: EASTING=${arr[0]}, NORTHING=${arr[1]}, Zone=${arr[2]}")
+                val easting_utm = arr[0] as Double
+                val northing_utm = arr[1] as Double
+                val targetCoord = UTMCoord(northing_utm,easting_utm,0.0)
+                val closestCoord = findClosestUTMCoord(targetCoord, coordsList)
+                val speedStatus = getSpeedStatus(speed, closestpoint.speed)
+
+
+
                 Platform.runLater {
                     MapViewer.getInstance()?.addMarker(pixelX.toDouble(), pixelY.toDouble())
                     MapViewer.getInstance()?.addMarker(pixelX2.toDouble(), pixelY2.toDouble())
@@ -441,6 +480,8 @@ fun main() {
                         for (point in historyList) {
                             val (pixelX, pixelY) = latLonToPixel(point.latitude, point.longitude, latitude, longitude)
                             MapViewer.getInstance()?.addMarker(pixelX.toDouble(), pixelY.toDouble())
+                            if (INSIA)
+                                MapViewer.getInstance()?.updateSpeedDisplay(speed, speedStatus)
                         }
                     }
                 }
