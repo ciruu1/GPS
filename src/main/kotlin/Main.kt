@@ -26,8 +26,8 @@ val FILE_PATH = "coords.txt"
 
 val imageWidthPixels = 1280 // Ancho de la imagen en píxeles
 val imageHeightPixels = 720 // Alto de la imagen en píxeles
-val groundCoverageWidthMeters = 442.0 // Cobertura en el suelo en metros (debes ajustar este valor)
-val groundCoverageHeightMeters = 244.0
+val groundCoverageWidthMeters = 1123.0 // Cobertura en el suelo en metros (debes ajustar este valor)
+val groundCoverageHeightMeters = 654.0
 
 var lastLat: Double? = null
 var lastLon: Double? = null
@@ -57,22 +57,21 @@ class MapViewer : Application() {
 
         fun getMapImageUrl(centerLat: Double, centerLon: Double): String {
             val apiKey = "AIzaSyDRiHr7s5yvIFYBySkctaXfZLSJHGZbTqQ"
-            return "https://maps.googleapis.com/maps/api/staticmap?center=$centerLat,$centerLon&zoom=17&size=640x360&scale=2&maptype=satellite&key=$apiKey"
+            return "https://maps.googleapis.com/maps/api/staticmap?center=$centerLat,$centerLon&zoom=16&size=640x360&scale=2&maptype=satellite&key=$apiKey"
         }
     }
 
     override fun start(primaryStage: Stage) {
         instance = this
         val root = VBox()
-        canvas = Canvas(1280.0, 720.0)
+        val canvas = Canvas(1280.0, 620.0)  // Ajustar el tamaño para dejar espacio al indicador de velocidad
         graphicsContext = canvas.graphicsContext2D
-
         val mapImage = Image(FileInputStream("/Users/ivangarcia/Documents/insia.jpg"))
         graphicsContext.drawImage(mapImage, 0.0, 0.0)
 
         loadMapImage()
 
-        speedLabel = Label("0 km/h").apply {
+        speedLabel = Label("NA km/h").apply {
             font = Font.font(24.0)
             textFill = Color.BLACK
         }
@@ -151,7 +150,7 @@ class MapViewer : Application() {
     fun addMarker(pixelX: Double, pixelY: Double) {
         Platform.runLater {
             graphicsContext.fill = Color.RED
-            graphicsContext.fillOval(pixelX - 5, pixelY - 5, 10.0, 10.0)
+            graphicsContext.fillOval(pixelX - 2.4, pixelY - 2.5, 5.0, 5.0)
         }
     }
 
@@ -330,7 +329,6 @@ fun calculateClosestPoint(latitude: Double, longitude: Double, list: ArrayList<L
             distance = currDist
             finalPoint = point
         }
-        println("$currDist | $distance | ${finalPoint.point}")
     }
     return finalPoint
 }
@@ -381,6 +379,8 @@ fun comprobarSentidoAntiHorario(currentIndex: Int, lastIndex: Int, max: Int): Bo
 }
 
 
+
+
 fun main() {
     val portName = "/dev/tty.usbmodem1101"
     val baudRate = 115200
@@ -411,23 +411,20 @@ fun main() {
             val newData = ByteArray(comPort.bytesAvailable())
             val numRead = comPort.readBytes(newData, newData.size.toLong())
             val dataString = String(newData, 0, numRead)
-
+            print(dataString)
             if (dataString.startsWith("\$GPGGA")) {
                 val parts = dataString.split(",")
-                println(parts[2].toDouble())
-                println(parts[4].toDouble())
                 val latitude = convertToDecimal(parts[2].toDouble())
-                val longitude = -convertToDecimal(parts[4].toDouble()) // Assuming Western Hemisphere
+                val longitude = -convertToDecimal(parts[4].toDouble())  // Assuming Western Hemisphere
                 val currentTime = System.currentTimeMillis()
                 val timeDifference = (currentTime - (lastTime ?: currentTime)) / 1000.0
                 lastTime = currentTime
 
-                println("$latitude, $longitude")
+                println("Current Position: $latitude, $longitude")
 
                 if (historyList.size >= 50) {
                     historyList.removeFirst()
                 }
-
                 historyList.add(PointCoordinates(longitude, latitude))
 
                 val mapCenter = MapViewer.getInstance()?.getMapCenter()
@@ -436,14 +433,11 @@ fun main() {
 
                 val (pixelX, pixelY) = latLonToPixel(latitude, longitude, mapCenterLat, mapCenterLon)
 
-                val (pixelX2, pixelY2) = latLonToPixel(40.550085, -3.622272, mapCenterLat, mapCenterLon)
-
                 val speed = updatePositionAndCalculateSpeed(latitude, longitude, timeDifference)
                 println("Velocidad actual: $speed km/h")
 
                 // Calcular punto más cercano LAT LON
                 val pointCoordinatesList: ArrayList<LatLonPoint> = ArrayList()
-                //coordsList.forEach { pointCoordinatesList.add(LatLonPoint(UtmCoordinate(30, 'S', it.easting, it.northing).utmToPointCoordinates(), it.speedLimit)) }
                 var i = 1
                 for (coord in coordsList) {
                     pointCoordinatesList.add(LatLonPoint(UtmCoordinate(30, 'S', coord.easting, coord.northing).utmToPointCoordinates(), coord.speedLimit, i))
@@ -452,7 +446,7 @@ fun main() {
                 val closestpoint = calculateClosestPoint(latitude, longitude, pointCoordinatesList)
                 // TODO Calcular distancia al punto más cercano de la lista, si es menos de 10m(por ejemplo) estamos en
                 //  la pista del INSIA y entonces activamos la funcionalidad de la práctica 3
-                if (false)
+                if (calculateHaversineDistance(closestpoint.point.latitude, closestpoint.point.longitude, latitude, longitude) < 10.0)
                     INSIA = true
 
 
@@ -460,28 +454,28 @@ fun main() {
                 val west = parts[5] == "W"
                 val arr = convertToUTM(parts[2].toDouble(), parts[4].toDouble(), north, west)
                 println("UTM Coordinates: EASTING=${arr[0]}, NORTHING=${arr[1]}, Zone=${arr[2]}")
-                val easting_utm = arr[0] as Double
-                val northing_utm = arr[1] as Double
-                val targetCoord = UTMCoord(northing_utm,easting_utm,0.0)
-                val closestCoord = findClosestUTMCoord(targetCoord, coordsList)
+
                 val speedStatus = getSpeedStatus(speed, closestpoint.speed)
-
-
-
                 Platform.runLater {
                     MapViewer.getInstance()?.addMarker(pixelX.toDouble(), pixelY.toDouble())
+                    if (INSIA) {
+                        MapViewer.getInstance()?.updateSpeedDisplay(speed, speedStatus)
+                    }else{
+                        MapViewer.getInstance()?.updateSpeedDisplay(speed, "gray")
+                    }
+                    val (pixelX2, pixelY2) = latLonToPixel(40.55231307914895, -3.6183565012807204, latitude, longitude)
                     MapViewer.getInstance()?.addMarker(pixelX2.toDouble(), pixelY2.toDouble())
+
                 }
 
-                // Check if the user is near the edge of the map
-                if (pixelX < 100 || pixelX > 1180 || pixelY < 100 || pixelY > 620) {
+                // Check if the user is near the edge of the map and update map center proactively
+                if (shouldUpdateMap(pixelX, pixelY)) {
                     Platform.runLater {
                         MapViewer.getInstance()?.updateMapCenter(latitude, longitude)
+                        // Re-draw all markers on the new map center
                         for (point in historyList) {
                             val (pixelX, pixelY) = latLonToPixel(point.latitude, point.longitude, latitude, longitude)
                             MapViewer.getInstance()?.addMarker(pixelX.toDouble(), pixelY.toDouble())
-                            if (INSIA)
-                                MapViewer.getInstance()?.updateSpeedDisplay(speed, speedStatus)
                         }
                     }
                 }
@@ -491,6 +485,13 @@ fun main() {
 
     Application.launch(MapViewer::class.java)
 }
+
+fun shouldUpdateMap(pixelX: Int, pixelY: Int): Boolean {
+    val updateThreshold = 100  // threshold in pixels from the edge of the map
+    return pixelX < updateThreshold || pixelX > imageWidthPixels - updateThreshold ||
+            pixelY < updateThreshold || pixelY > imageHeightPixels - updateThreshold
+}
+
 
 class LatLonPoint(point: PointCoordinates, speed: Double, index: Int) {
     var point = point
