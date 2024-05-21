@@ -6,13 +6,14 @@ import javafx.application.Application
 import javafx.application.Platform
 import javafx.scene.Scene
 import javafx.scene.canvas.Canvas
-import javafx.scene.canvas.GraphicsContext
+import javafx.scene.control.Button
 import javafx.scene.control.Label
 import javafx.scene.image.Image
 import javafx.scene.layout.BorderPane
 import javafx.scene.layout.StackPane
 import javafx.scene.paint.Color
 import javafx.scene.shape.Circle
+import javafx.scene.shape.Rectangle
 import javafx.scene.text.Font
 import javafx.stage.Stage
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
@@ -29,15 +30,16 @@ val FILE_PATH = "coords.txt"
 
 val imageWidthPixels = 1280 // Ancho de la imagen en píxeles
 val imageHeightPixels = 720 // Alto de la imagen en píxeles
-val groundCoverageWidthMeters = 1123.0 // Cobertura en el suelo en metros (debes ajustar este valor)
-val groundCoverageHeightMeters = 654.0
+var groundCoverageWidthMeters = 1161.792 // Cobertura en el suelo en metros (debes ajustar este valor)
+var groundCoverageHeightMeters = 653.184
 
 var lastLat: Double? = null
 var lastLon: Double? = null
 var lastTime: Long? = null  // Tiempo en milisegundos
 
 var INSIA = false
-
+var maptype = "satellite"
+var zoom = 16
 var lastIndex = 0
 
 var historyList = ArrayList<PointCoordinates>()
@@ -149,22 +151,20 @@ fun sendTelegramMessage(botToken: String, chatId: String, messageText: String? =
 
 
 
-var updateCenter = true
-var centerLat = 0.0
-var centerLon = 0.0
-
 data class UTMCoord(val northing: Double, val easting: Double, val speedLimit: Double)
 class MapViewer : Application() {
-    private lateinit var graphicsContext: GraphicsContext
-    private lateinit var canvas: Canvas
+    private lateinit var graphicsContext: javafx.scene.canvas.GraphicsContext
     private lateinit var speedLabel: Label
     private lateinit var speedPane: StackPane
-    private lateinit var infoPane: StackPane
     private lateinit var infoLabel: Label
+    private lateinit var infoPane: StackPane
     private lateinit var speedLimitLabel: Label
     private lateinit var speedLimitCircle: StackPane
-    private lateinit var speedLimitLabel2: Label
-    private lateinit var speedLimitCircle2: StackPane
+    private lateinit var infoRectangle: StackPane
+    private lateinit var mapCanvas: Canvas
+    private lateinit var mapButton: Button
+    private lateinit var plusButton: Button
+    private lateinit var minusButton: Button
     private var mapCenterLat = 40.714728
     private var mapCenterLon = -73.998672
 
@@ -177,7 +177,50 @@ class MapViewer : Application() {
 
         fun getMapImageUrl(centerLat: Double, centerLon: Double): String {
             val apiKey = "AIzaSyDRiHr7s5yvIFYBySkctaXfZLSJHGZbTqQ"
-            return "https://maps.googleapis.com/maps/api/staticmap?center=$centerLat,$centerLon&zoom=16&size=640x360&scale=2&maptype=satellite&key=$apiKey"
+            return "https://maps.googleapis.com/maps/api/staticmap?center=$centerLat,$centerLon&zoom=$zoom&size=640x360&scale=2&maptype=$maptype&key=$apiKey"
+        }
+    }
+
+    fun changeMapType() {
+        maptype = when (maptype) {
+            "roadmap" -> "satellite"
+            "satellite" -> "terrain"
+            "terrain" -> "hybrid"
+            else -> "roadmap"
+        }
+        updateMapCenter(mapCenterLat, mapCenterLon)
+        mapButton.text = "$maptype"
+    }
+
+    private fun zoomIn() {
+        zoom += 1
+        updateGroundCoverage()
+        // Implementar lógica para actualizar el zoom del mapa
+        println("Zoom increased to $zoom")
+        println("Ground coverage: $groundCoverageWidthMeters x $groundCoverageHeightMeters meters")
+    }
+
+    private fun zoomOut() {
+        zoom -= 1
+        updateGroundCoverage()
+        // Implementar lógica para actualizar el zoom del mapa
+        println("Zoom decreased to $zoom")
+        println("Ground coverage: $groundCoverageWidthMeters x $groundCoverageHeightMeters meters")
+    }
+
+    private fun updateGroundCoverage() {
+        val zoomFactor = Math.pow(2.0, (16 - zoom).toDouble())
+        groundCoverageWidthMeters = 1123.0 * zoomFactor
+        groundCoverageHeightMeters = 654.0 * zoomFactor
+    }
+
+
+    private fun getNextMapType(): String {
+        return when (maptype) {
+            "roadmap" -> "satellite"
+            "satellite" -> "terrain"
+            "terrain" -> "hybrid"
+            else -> "roadmap"
         }
     }
 
@@ -185,8 +228,8 @@ class MapViewer : Application() {
         instance = this
         val root = StackPane()
 
-        val canvas = Canvas(1280.0, 620.0)  // Ajustar el tamaño para dejar espacio al indicador de velocidad
-        graphicsContext = canvas.graphicsContext2D
+        mapCanvas = Canvas(1280.0, 620.0)  // Ajustar el tamaño para dejar espacio al indicador de velocidad
+        graphicsContext = mapCanvas.graphicsContext2D
         val mapImage = Image(FileInputStream("/Users/ivangarcia/Documents/insia.jpg"))
         graphicsContext.drawImage(mapImage, 0.0, 0.0)
 
@@ -200,40 +243,103 @@ class MapViewer : Application() {
         speedPane = StackPane(speedLabel).apply {
             style = "-fx-background-color: green;"
             minHeight = 100.0
-            minWidth = 1080.0
+            minWidth = 1280.0
         }
 
         infoLabel = Label().apply {
             font = Font.font(16.0)
             textFill = Color.WHITE
         }
-        infoPane = StackPane(infoLabel).apply {
-            style = "-fx-background-color: rgba(0, 0, 0, 0.7);"
-            maxWidth = 250.0
-            minWidth = 250.0
+        val rectangle = Rectangle(40.0, 20.0, Color.BLACK).apply {
+
         }
 
-        speedLimitLabel = Label("50").apply {
+        infoPane = StackPane(rectangle, infoLabel).apply {
+            style = "-fx-background-color: rgba(0, 0, 0, 0.7);"
+
+        }
+
+        infoLabel = Label("-").apply {
+            font = Font.font(24.0)
+            textFill = Color.WHITE
+
+        }
+        val rectange_info = Rectangle(400.0, 200.0).apply {
+            opacity = 0.7
+            arcWidth = 30.0
+            arcHeight = 30.0
+
+        }
+
+        infoRectangle = StackPane(rectange_info, infoLabel).apply {
+            translateX = -425.0
+            translateY = -250.0
+        }
+
+        speedLimitLabel = Label("-").apply {
             font = Font.font(24.0)
             textFill = Color.BLACK
         }
+
+
         val circle = Circle(30.0, Color.WHITE).apply {
             stroke = Color.RED
             strokeWidth = 6.0
         }
         speedLimitCircle = StackPane(circle, speedLimitLabel).apply {
-            translateX = -600.0
+            translateX = -575.0
             translateY = 200.0
         }
 
+        mapButton = Button(getNextMapType()).apply {
+            setOnAction {
+
+                changeMapType()
+            }
+            style = "-fx-background-color: rgba(255, 255, 255, 0.7);" // Background color with some transparency
+        }
+
+        plusButton = Button("+").apply {
+            setOnAction {
+                zoomIn()
+                updateMapCenter(mapCenterLat, mapCenterLon)
+            }
+            style = "-fx-background-color: rgba(255, 255, 255, 0.7);" // Background color with some transparency
+        }
+
+        minusButton = Button("-").apply {
+            setOnAction {
+                zoomOut()
+                updateMapCenter(mapCenterLat, mapCenterLon)
+            }
+            style = "-fx-background-color: rgba(255, 255, 255, 0.7);" // Background color with some transparency
+        }
+
+        val buttonBox = StackPane(mapButton).apply {
+            translateX = -20.0  // Adjust X coordinate as needed
+            translateY = 20.0   // Adjust Y coordinate as needed
+        }
+
+        val buttonBoxplus = StackPane(plusButton).apply {
+            translateX = -90.0  // Adjust X coordinate as needed
+            translateY = 20.0   // Adjust Y coordinate as needed
+        }
+
+        val buttonBoxminus = StackPane(minusButton).apply {
+            translateX = -120.0  // Adjust X coordinate as needed
+            translateY = 20.0   // Adjust Y coordinate as needed
+        }
 
         val borderPane = BorderPane()
-        borderPane.center = canvas
+        borderPane.center = mapCanvas
         borderPane.bottom = speedPane
 
-        root.children.addAll(borderPane, infoPane, speedLimitCircle)
-        StackPane.setAlignment(infoPane, javafx.geometry.Pos.CENTER_RIGHT)
+        root.children.addAll(borderPane, speedLimitCircle, infoRectangle, buttonBox, buttonBoxplus, buttonBoxminus)
         StackPane.setAlignment(speedLimitCircle, javafx.geometry.Pos.TOP_LEFT)
+        StackPane.setAlignment(infoRectangle, javafx.geometry.Pos.TOP_LEFT)
+        StackPane.setAlignment(mapButton, javafx.geometry.Pos.TOP_RIGHT)
+        StackPane.setAlignment(plusButton, javafx.geometry.Pos.TOP_RIGHT)
+        StackPane.setAlignment(minusButton, javafx.geometry.Pos.TOP_RIGHT)
 
         primaryStage.scene = Scene(root, 1280.0, 720.0)
         primaryStage.title = "Map and Speed Viewer"
@@ -262,6 +368,11 @@ class MapViewer : Application() {
                 if (img.isError.not()) {
                     graphicsContext.drawImage(img, 0.0, 0.0)
                 }
+            }
+
+            for (point in historyList) {
+                val (pixelX, pixelY) = latLonToPixel(point.latitude, point.longitude, mapCenterLat, mapCenterLon)
+                MapViewer.getInstance()?.addMarker(pixelX.toDouble(), pixelY.toDouble())
             }
         }
     }
@@ -629,14 +740,20 @@ fun checkForAccident(
     highwayType: String
 ) {
     if (highwayType == "motorway" && (lastSpeed - currentSpeed) > 50) {
-        val messageText = "Possible accident detected!"
+        val messageText = """
+        ¡⚠️ Posible Accidente Detectado! 🚨
+    
+        Por favor, este es un aviso de emergencia. Notifique a las autoridades de emergencia inmediatamente.
+    
+        Recordatorio: Este es solo un aviso y carece de confirmación final. Se recomienda realizar una verificación adicional.
+    
+        🙏 ¡Gracias por su pronta atención y cooperación!
+        
+        📍 Ubicación del Vehículo:
+        """.trimIndent()
         sendTelegramMessage(botToken, chatId, messageText)
         sendTelegramMessage(botToken, chatId, latitude = latitude, longitude = longitude)
     }
-
-    val messageText = "Possible accident detected!"
-    sendTelegramMessage(botToken, chatId, messageText)
-    sendTelegramMessage(botToken, chatId, latitude = latitude, longitude = longitude)
     lastSpeed = currentSpeed
 }
 
@@ -682,12 +799,6 @@ fun main() {
                 val timeDifference = (currentTime - (lastTime ?: currentTime)) / 1000.0
                 lastTime = currentTime
 
-                if (updateCenter) {
-                    centerLat = latitude
-                    centerLon = longitude
-                    updateCenter = false
-                }
-
                 println("Current Position: $latitude, $longitude")
 
                 if (historyList.size >= 50) {
@@ -729,9 +840,8 @@ fun main() {
                     }else{
                         MapViewer.getInstance()?.updateSpeedDisplay(speed, "gray")
                     }
-                    val (pixelX2, pixelY2) = latLonToPixel(40.55231307914895, -3.6183565012807204, latitude, longitude)
+                    val (pixelX2, pixelY2) = latLonToPixel(40.54355924142748, -3.6252657563084014, latitude, longitude)
                     MapViewer.getInstance()?.addMarker(pixelX2.toDouble(), pixelY2.toDouble())
-
                     try {
                         val response = apiClient.getNearestRoad(latitude, longitude)
                         response.elements.forEach { element ->
@@ -782,20 +892,7 @@ fun main() {
                 }
 
                 // Check if the user is near the edge of the map and update map center proactively
-                /*if (shouldUpdateMap(pixelX, pixelY)) {
-                    Platform.runLater {
-                        MapViewer.getInstance()?.updateMapCenter(latitude, longitude)
-                        // Re-draw all markers on the new map center
-                        for (point in historyList) {
-                            val (pixelX, pixelY) = latLonToPixel(point.latitude, point.longitude, latitude, longitude)
-                            MapViewer.getInstance()?.addMarker(pixelX.toDouble(), pixelY.toDouble())
-                        }
-                    }
-                }*/
-
-                // Check if the user is near the edge of the map and update map center proactively
-                if (calculateHaversineDistance(centerLat, centerLon, latitude, longitude) > 10.0) {
-                    updateCenter = true
+                if (shouldUpdateMap(pixelX, pixelY)) {
                     Platform.runLater {
                         MapViewer.getInstance()?.updateMapCenter(latitude, longitude)
                         // Re-draw all markers on the new map center
@@ -812,11 +909,11 @@ fun main() {
     Application.launch(MapViewer::class.java)
 }
 
-/*fun shouldUpdateMap(pixelX: Int, pixelY: Int): Boolean {
+fun shouldUpdateMap(pixelX: Int, pixelY: Int): Boolean {
     val updateThreshold = 100  // threshold in pixels from the edge of the map
     return pixelX < updateThreshold || pixelX > imageWidthPixels - updateThreshold ||
             pixelY < updateThreshold || pixelY > imageHeightPixels - updateThreshold
-}*/
+}
 
 
 class LatLonPoint(point: PointCoordinates, speed: Double, index: Int) {
